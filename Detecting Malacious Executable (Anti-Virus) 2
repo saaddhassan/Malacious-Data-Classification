@@ -1,0 +1,587 @@
+
+# coding: utf-8
+
+# In[52]:
+
+
+from google.colab import drive
+drive.mount('/content/gdrive')
+
+
+# # Importing Libraries
+
+# In[ ]:
+
+
+get_ipython().run_line_magic('tensorflow_version', '1.x')
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import Normalizer,StandardScaler
+from sklearn.metrics import accuracy_score
+
+
+# In[ ]:
+
+
+# roc curve and auc
+from sklearn.datasets import make_classification
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_curve
+from sklearn.metrics import roc_auc_score
+from matplotlib import pyplot
+
+
+# # Constructing Dataset
+
+# In[ ]:
+
+
+# Converting raw data into feature and values
+rawData = open("/content/gdrive/My Drive/dataset.train", "r")
+rawdataset = []
+for row in rawData:
+    rawdataset.append(row)
+
+
+# In[ ]:
+
+
+dataset = []
+for row in rawdataset:
+    temprow = np.zeros(532)
+    
+    for index in range(1,len(row.split())-1):
+        temprow[int(row.split()[index].split(':')[0])-1]=1
+    
+    if (row.split()[0].split(':')[0]=='+1'):
+        temprow[531]=1                            # We add the label 1 as this row represents malicious data
+    else:
+        temprow[531]=0                            # We add the label 0 as this row represents non malicious data
+    
+    dataset.append(temprow)
+
+
+# In[108]:
+
+
+print("Shape of our constructed dataset from the raw data is : ", np.shape(dataset))
+
+
+# # Data points and the truth values
+
+# In[ ]:
+
+
+dataset = np.array(dataset)
+
+
+# In[ ]:
+
+
+X = dataset[:,:531]
+y = dataset[:,531:]
+
+
+# In[111]:
+
+
+print("Shape of X data points is : ", np.shape(X))
+print("Shape of y truth values is : ", np.shape(y))
+
+
+# # Normalization of Data
+
+# In[ ]:
+
+
+X = StandardScaler().fit_transform(X)
+
+
+# In[ ]:
+
+
+X = Normalizer().fit_transform(X)
+
+
+# In[114]:
+
+
+print("The 50 values in the first data point are : \n\n",X[0][0:50])
+
+
+# # Constructing train and test part of the dataset
+
+# In[ ]:
+
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=42)
+
+
+# In[116]:
+
+
+print("Shape of X_train data points is : ", np.shape(X_train))
+print("Shape of y_train truth values is : ", np.shape(y_train))
+
+
+# In[117]:
+
+
+print("Shape of X_test data points is : ", np.shape(X_test))
+print("Shape of y_test truth values is : ", np.shape(y_test))
+
+
+# # Training for our model
+
+# In[ ]:
+
+
+
+from keras import Sequential
+from keras.layers import Dense
+from keras.layers.normalization import BatchNormalization
+from keras.callbacks import EarlyStopping,ModelCheckpoint
+
+
+# In[ ]:
+
+
+model = Sequential()
+
+model.add(Dense(1024, activation='relu', kernel_initializer='random_normal', input_dim=531))
+model.add(Dense(2048, activation='relu', kernel_initializer='random_normal'))
+model.add(Dense(4096, activation='relu', kernel_initializer='random_normal'))
+model.add(BatchNormalization())
+model.add(Dense(4096, activation='relu', kernel_initializer='random_normal'))
+model.add(Dense(2048, activation='relu', kernel_initializer='random_normal'))
+model.add(BatchNormalization())
+model.add(Dense(1024, activation='relu', kernel_initializer='random_normal'))
+
+#Output Layer
+model.add(Dense(1, activation='sigmoid', kernel_initializer='random_normal'))
+
+#Compiling the neural network
+model.compile(optimizer ='adam',loss='binary_crossentropy', metrics =['accuracy'])
+
+
+# In[ ]:
+
+
+modelCheckpointing = ModelCheckpoint('/content/gdrive/My Drive/best_model_maliciousDataClassification.h5', monitor='val_loss', mode='min', save_best_only=True,verbose=1)
+earlyStopping = EarlyStopping(monitor='val_loss', mode='min',patience=10,verbose=1)
+
+
+# In[121]:
+
+
+#Fitting the data to the training dataset
+modelHistory = model.fit(X_train,y_train, validation_data=(X_test, y_test),batch_size=256, epochs=100, callbacks=[earlyStopping,modelCheckpointing])
+
+
+# ## Training History
+
+# In[122]:
+
+
+# plot training history
+pyplot.plot(modelHistory.history['loss'], label='train')
+pyplot.plot(modelHistory.history['val_loss'], label='test')
+pyplot.legend()
+pyplot.show()
+
+
+# ## Evaluating our model
+
+# In[123]:
+
+
+eval_model=model.evaluate(X_train, y_train)
+eval_model
+
+
+# In[ ]:
+
+
+y_pred=model.predict(X_test)
+y_pred =(y_pred>0.5)
+
+
+# In[125]:
+
+
+print("Accuracy Score:",accuracy_score(y_test, y_pred))
+
+
+# # ROC and AUC for model
+
+# In[ ]:
+
+
+# calculate roc curve
+fpr, tpr, thresholds = roc_curve(y_test, y_pred)
+
+
+# In[127]:
+
+
+# calculate AUC
+auc = roc_auc_score(y_test, y_pred)
+print('AUC score for the model: ' + str(auc))
+
+
+# ## ROC curve for no-skill and the model
+
+# In[ ]:
+
+
+# Generating NO-SKILL probabilities which predict fixed out for every data point
+ns_probs = [0 for _ in range(len(y_test))]
+
+# Generating our trained model probabilities
+lr_probs = model.predict_proba(X_test)
+
+
+# In[129]:
+
+
+# ROC AUC FOR BOTH
+ns_auc = roc_auc_score(y_test, ns_probs)
+lr_auc = roc_auc_score(y_test, lr_probs)
+print('No Skill : ROC AUC= ' +str(ns_auc))
+print('ANN Model: ROC AUC= '+str(lr_auc))
+
+
+# In[130]:
+
+
+
+# calculate roc curves
+ns_fpr, ns_tpr, _ = roc_curve(y_test, ns_probs)
+lr_fpr, lr_tpr, _ = roc_curve(y_test, lr_probs)
+# plot the roc curve for the model
+pyplot.plot(ns_fpr, ns_tpr, linestyle='--', label='No Skill')
+pyplot.plot(lr_fpr, lr_tpr, marker='.', label='ANN Model')
+# axis labels
+pyplot.xlabel('False Positive Rate')
+pyplot.ylabel('True Positive Rate')
+# show the legend
+pyplot.legend()
+# show the plot
+pyplot.show()
+
+
+# # Save and load model
+
+# In[ ]:
+
+
+import pickle
+# save the model to disk
+filename = '/content/gdrive/My Drive/finalized_model_maliciousDataClassification.sav'
+pickle.dump(model, open(filename, 'wb'))
+  
+
+
+# In[132]:
+
+
+# load the model from disk
+loaded_model = pickle.load(open(filename, 'rb'))
+result = loaded_model.evaluate(X_test, y_test)
+print(result)
+
+
+# In[ ]:
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.gaussian_process import GaussianProcessClassifier
+from sklearn.gaussian_process.kernels import RBF
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import plot_confusion_matrix
+from sklearn.metrics import roc_curve
+from sklearn.metrics import roc_auc_score
+
+
+# # Experimenting on all Classifiers
+
+# # KNN CLassifier
+
+# In[ ]:
+
+
+# Defining our model
+model = KNeighborsClassifier(5)
+
+
+# In[135]:
+
+
+
+print("------------------------"+"Classifier Name :","K Nearest Neighbours")
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+print("Accuracy Score:",accuracy_score(y_test, y_pred))
+
+
+# In[136]:
+
+
+
+# Plot non-normalized confusion matrix
+figure = plt.figure(figsize=(27, 9))
+np.set_printoptions(precision=2)
+
+titles_options = [("Confusion matrix, without normalization", None),
+                  ("Normalized confusion matrix", 'true')]
+for title, normalize in titles_options:
+    disp = plot_confusion_matrix(model, X, y,
+                                 display_labels=['Malicious','Not Malicious'],
+                                 cmap=plt.cm.Blues,
+                                 normalize=normalize)
+    disp.ax_.set_title(title)
+
+    print(title)
+    print(disp.confusion_matrix)
+
+plt.show()
+
+
+# In[137]:
+
+
+print("--------------------------------------------------- ROC Curve: " + "K Nearest Neighbours")
+auc = roc_auc_score(y_test, y_pred)
+print('AUC:' + str(auc))
+fpr, tpr, thresholds = roc_curve(y_test, y_pred)
+plt.plot([0, 1], [0, 1], linestyle='--')
+plt.plot(fpr, tpr, marker='.')
+plt.show()
+
+
+# # Linear SVM Classifier
+
+# In[ ]:
+
+
+# Defining our model
+model = SVC(kernel="linear", C=0.025)
+
+
+# In[139]:
+
+
+
+print("------------------------"+"Classifier Name :","Linear SVM Classifier")
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+print("Accuracy Score:",accuracy_score(y_test, y_pred))
+
+
+# In[140]:
+
+
+
+# Plot non-normalized confusion matrix
+figure = plt.figure(figsize=(27, 9))
+np.set_printoptions(precision=2)
+
+titles_options = [("Confusion matrix, without normalization", None),
+                  ("Normalized confusion matrix", 'true')]
+for title, normalize in titles_options:
+    disp = plot_confusion_matrix(model, X, y,
+                                 display_labels=['Malicious','Not Malicious'],
+                                 cmap=plt.cm.Blues,
+                                 normalize=normalize)
+    disp.ax_.set_title(title)
+
+    print(title)
+    print(disp.confusion_matrix)
+
+plt.show()
+
+
+# In[141]:
+
+
+print("--------------------------------------------------- ROC Curve: " + "Linear SVM Classifier")
+auc = roc_auc_score(y_test, y_pred)
+print('AUC:' + str(auc))
+fpr, tpr, thresholds = roc_curve(y_test, y_pred)
+plt.plot([0, 1], [0, 1], linestyle='--')
+plt.plot(fpr, tpr, marker='.')
+plt.show()
+
+
+# # RBF SVM
+
+# In[ ]:
+
+
+# Defining our model
+model =  SVC(gamma=2, C=1)
+
+
+# In[143]:
+
+
+
+print("------------------------"+"Classifier Name :","RBF SVM")
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+print("Accuracy Score:",accuracy_score(y_test, y_pred))
+
+
+# In[144]:
+
+
+
+# Plot non-normalized confusion matrix
+figure = plt.figure(figsize=(27, 9))
+np.set_printoptions(precision=2)
+
+titles_options = [("Confusion matrix, without normalization", None),
+                  ("Normalized confusion matrix", 'true')]
+for title, normalize in titles_options:
+    disp = plot_confusion_matrix(model, X, y,
+                                 display_labels=['Malicious','Not Malicious'],
+                                 cmap=plt.cm.Blues,
+                                 normalize=normalize)
+    disp.ax_.set_title(title)
+
+    print(title)
+    print(disp.confusion_matrix)
+
+plt.show()
+
+
+# In[145]:
+
+
+print("--------------------------------------------------- ROC Curve: " + "RBF SVM")
+auc = roc_auc_score(y_test, y_pred)
+print('AUC:' + str(auc))
+fpr, tpr, thresholds = roc_curve(y_test, y_pred)
+plt.plot([0, 1], [0, 1], linestyle='--')
+plt.plot(fpr, tpr, marker='.')
+plt.show()
+
+
+# # Gaussian Process CLassifier
+
+# In[ ]:
+
+
+# Defining our model
+model =  GaussianProcessClassifier(1.0 * RBF(1.0))
+
+
+# In[147]:
+
+
+
+print("------------------------"+"Classifier Name :","Gaussian Process Classifier")
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+print("Accuracy Score:",accuracy_score(y_test, y_pred))
+
+
+# In[148]:
+
+
+
+# Plot non-normalized confusion matrix
+figure = plt.figure(figsize=(27, 9))
+np.set_printoptions(precision=2)
+
+titles_options = [("Confusion matrix, without normalization", None),
+                  ("Normalized confusion matrix", 'true')]
+for title, normalize in titles_options:
+    disp = plot_confusion_matrix(model, X, y,
+                                 display_labels=['Malicious','Not Malicious'],
+                                 cmap=plt.cm.Blues,
+                                 normalize=normalize)
+    disp.ax_.set_title(title)
+
+    print(title)
+    print(disp.confusion_matrix)
+
+plt.show()
+
+
+# In[149]:
+
+
+print("--------------------------------------------------- ROC Curve: " + "Gaussian Process Classifier")
+auc = roc_auc_score(y_test, y_pred)
+print('AUC:' + str(auc))
+fpr, tpr, thresholds = roc_curve(y_test, y_pred)
+plt.plot([0, 1], [0, 1], linestyle='--')
+plt.plot(fpr, tpr, marker='.')
+plt.show()
+
+
+# # Random Forest Classifier
+
+# In[ ]:
+
+
+# Defining our model
+model =  RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1)
+
+
+# In[151]:
+
+
+
+print("------------------------"+"Classifier Name :","Random Forest Classifier")
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+print("Accuracy Score:",accuracy_score(y_test, y_pred))
+
+
+# In[152]:
+
+
+
+# Plot non-normalized confusion matrix
+figure = plt.figure(figsize=(27, 9))
+np.set_printoptions(precision=2)
+
+titles_options = [("Confusion matrix, without normalization", None),
+                  ("Normalized confusion matrix", 'true')]
+for title, normalize in titles_options:
+    disp = plot_confusion_matrix(model, X, y,
+                                 display_labels=['Malicious','Not Malicious'],
+                                 cmap=plt.cm.Blues,
+                                 normalize=normalize)
+    disp.ax_.set_title(title)
+
+    print(title)
+    print(disp.confusion_matrix)
+
+plt.show()
+
+
+# In[153]:
+
+
+print("--------------------------------------------------- ROC Curve: " + "Random Forest Classifier")
+auc = roc_auc_score(y_test, y_pred)
+print('AUC:' + str(auc))
+fpr, tpr, thresholds = roc_curve(y_test, y_pred)
+plt.plot([0, 1], [0, 1], linestyle='--')
+plt.plot(fpr, tpr, marker='.')
+plt.show()
+
